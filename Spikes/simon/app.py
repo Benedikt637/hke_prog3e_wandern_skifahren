@@ -17,3 +17,4 @@ with column2:
     st.title("Wander Routen Finder")
     world_map = fm.Map(location=[user_latitude, user_longitude], zoom_start=14)
     st_folium(world_map, width=None, height=1000, use_container_width=True)
+    
