@@ -2,3 +2,12 @@ folium
 streamlit
 streamlit-folium
 streamlit-js-eval
+
+"""
+import streamlit as st
+import folium as fm
+from streamlit_folium import st_folium
+from streamlit_geolocation import streamlit_geolocation
+from pyrosm import OSM
+from pathlib import Path
+"""

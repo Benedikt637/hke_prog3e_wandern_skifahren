@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Daten Bank der Wander Routen
+main/datasources/alps-latest.osm.pbf
