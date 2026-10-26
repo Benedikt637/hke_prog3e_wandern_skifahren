@@ -1,2 +1,2 @@
-import data.py
-import functions.py
+import data
+import functions
