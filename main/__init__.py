@@ -1,2 +1,3 @@
-import data.py
-import functions.py
+from . import data
+from . import functions
+from . import application
