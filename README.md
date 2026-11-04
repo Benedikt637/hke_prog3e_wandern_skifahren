@@ -18,6 +18,8 @@ Sprint 2:
       -Backlogs und Spikes für die Teammitglieder erstellen um die oberen Aufgaben auf die Teammitglieder zu verteilen
     ->Alle:
       -Verbesserung der allgemeinen Python Kenntnisse
+      -Ich habe 3 Backlogs erstellt die den Aufgaben dieses Sprints entsprechen
+        -> Bitte jeder eins von den Backlogs auswählen welches ihm gefällt und darunter kommentieren "Ich mach das"
 
 
 Definition of Done:
