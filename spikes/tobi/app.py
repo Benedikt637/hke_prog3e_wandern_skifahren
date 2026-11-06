@@ -1,47 +1,48 @@
+import html
+
 import folium
+import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
-from Data import lade_wander_daten
+
+from Data import lade_gipfel_daten
 
 st.set_page_config(page_title="Wander-App", layout="wide")
+st.title("Berggipfel bei Oberstdorf")
 
-st.title("Wanderrouten")
-st.write("Hier werden die Live-Daten mit echten GPS-Linien eingebunden.")
+try:
+    gipfel = lade_gipfel_daten()
+except FileNotFoundError:
+    st.info("Noch keine Gipfeldaten vorhanden. Starte zuerst download.py.")
+    gipfel = pd.DataFrame(columns=["name", "hoehe", "lat", "lon"])
+except (OSError, ValueError) as error:
+    st.error(f"Die lokalen Gipfeldaten konnten nicht gelesen werden: {error}")
+    gipfel = pd.DataFrame(columns=["name", "hoehe", "lat", "lon"])
 
-# Daten aus der Data.py laden
-df = lade_wander_daten()
+karte = folium.Map(
+    location=[47.41, 10.27],
+    zoom_start=12,
+    tiles="OpenStreetMap",
+)
 
-if not df.empty:
-    # Karte initialisieren (Zentriert auf das Oberstdorfer Gebet)
-    m = folium.Map(location=[47.41, 10.27], zoom_start=12)
+for _, row in gipfel.iterrows():
+    name = html.escape(str(row["name"]))
+    popup = name
+    if pd.notna(row["hoehe"]):
+        popup += f"<br>Höhe: {html.escape(str(row['hoehe']))} m"
 
-    # GPS-Linien aus dem DataFrame auf der Karte einzeichnen
-    for _, row in df.iterrows():
-        if "coords" in row and isinstance(row["coords"], list):
-            folium.PolyLine(
-                locations=row["coords"],
-                color="blue",
-                weight=4,
-                opacity=0.8,
-                tooltip=row["title"],
-            ).add_to(m)
+    folium.CircleMarker(
+        location=[row["lat"], row["lon"]],
+        radius=7,
+        color="darkgreen",
+        fill=True,
+        fill_color="green",
+        fill_opacity=0.9,
+        tooltip=name,
+        popup=folium.Popup(popup),
+    ).add_to(karte)
 
-            # Startmarker setzen
-            folium.Marker(
-                location=row["coords"][0],
-                popup=row["title"],
-                icon=folium.Icon(color="green", icon="play"),
-            ).add_to(m)
+st_folium(karte, width=1000, height=600)
 
-    # Karte in Streamlit anzeigen
-    st_folium(m, width=1000, height=500)
-
-    # Tabelle für Rohdaten & Download-Button
-    st.subheader("📋 Rohdaten der API")
-    
-    # Optional: coords-Spalte für eine saubere Tabellenansicht ausblenden
-    df_display = df.drop(columns=["coords"]) if "coords" in df.columns else df
-    st.dataframe(df_display, use_container_width=True)
-
-else:
-    st.warning("Es konnten keine Daten geladen werden. Bitte prüfen Sie die Verbindung oder die API-Parameter.")
+if gipfel.empty:
+    st.warning("Keine lokalen Gipfeldaten vorhanden.")
