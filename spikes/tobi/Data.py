@@ -1,81 +1,91 @@
-import pandas as pd
-import requests
-import urllib3
+import json
+import folium
+import streamlit as st
+from streamlit_folium import st_folium
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+st.set_page_config(page_title="Wanderkarte Tannheimer Tal", layout="wide")
+st.title("Interaktive Wanderkarte")
 
-
-def lade_wander_daten():
-    url = "https://overpass-api.de/api/interpreter"
-    headers = {"User-Agent": "WanderApp-Student-Project/1.0"}
-
-    # 'out geom 15' holt bis zu 15 echte Wanderwege inklusive ihrer GPS-Koordinatenpunkte
-    query = (
-        "[out:json][timeout:15];"
-        'way["highway"="path"](47.38, 10.22, 47.45, 10.32);'
-        "out geom 15;"
-    )
-
-    try:
-        response = requests.get(
-            url, params={"data": query}, headers=headers, verify=False, timeout=15
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            elements = data.get("elements", [])
-
-            routen_liste = []
-            for el in elements:
-                tags = el.get("tags", {})
-                name = tags.get("name", "Alpiner Wanderweg")
-
-                # Geometrie-Punkte des Weges auslesen
-                geometry = el.get("geometry", [])
-                if geometry:
-                    coords = [
-                        [pt.get("lat"), pt.get("lon")]
-                        for pt in geometry
-                        if "lat" in pt and "lon" in pt
-                    ]
-                    if len(coords) > 1:
-                        routen_liste.append({
-                            "title": name,
-                            "coords": coords,  # Die vollständige GPS-Linie als Koordinaten-Liste
-                            "lat": coords[0][0],  # Startpunkt für Tabellenansicht
-                            "lon": coords[0][1],
-                        })
-
-            df = pd.DataFrame(routen_liste)
-            if not df.empty:
-                return df
-
-    except Exception as e:
-        print(f"API-Abfrage für Linien fehlgeschlagen: {e}")
-
-    # Fallback-Daten mit echten GPS-Linienverläufen
-    fallback_linien = [
-        {
-            "title": "Nebelhorn Gratweg (Fallback)",
-            "coords": [
-                [47.4421, 10.3345],
-                [47.4450, 10.3400],
-                [47.4500, 10.3450],
-                [47.4550, 10.3500],
-            ],
-            "lat": 47.4421,
-            "lon": 10.3345,
-        },
-        {
-            "title": "Fellhorn Panoramaweg (Fallback)",
-            "coords": [
-                [47.3912, 10.2341],
-                [47.3950, 10.2400],
-                [47.4000, 10.2450],
-                [47.4050, 10.2500],
-            ],
-            "lat": 47.3912,
-            "lon": 10.2341,
-        },
+@st.cache_data
+def lade_daten():
+    with open("wanderwege.geojson", "r", encoding="utf-8") as file:
+        daten = json.load(file)
+    
+    # Nur Linien behalten
+    linien = [
+        f for f in daten["features"] 
+        if f["geometry"]["type"] in ["LineString", "MultiLineString"]
     ]
-    return pd.DataFrame(fallback_linien)
+    return linien
+
+alle_routen = lade_daten()
+
+# --- SEITENLEISTE ZUM AUFRÄUMEN ---
+st.sidebar.header("Filter & Übersicht")
+
+# 1. Alle verfügbaren Routennamen sammeln
+routen_namen = sorted(list(set(
+    f.get("properties", {}).get("name") 
+    for f in alle_routen 
+    if f.get("properties", {}).get("name")
+)))
+
+# 2. Auswahlmenü: Eine bestimmte Route oder alle anzeigen
+auswahl = st.sidebar.selectbox(
+    "Wähle eine Wanderroute aus:",
+    options=["Alle benannten Routen anzeigen"] + routen_namen
+)
+
+# 3. Option zum Ausblenden von riesigen Wegenetzen (wie "lokale beschilderte Wanderwege")
+netze_ausblenden = st.sidebar.checkbox("Große Sammel-Wegenetze ausblenden", value=True)
+
+# --- DATEN FILTERN ---
+gefilterte_routen = []
+for f in alle_routen:
+    name = f.get("properties", {}).get("name")
+    
+    # Unbenannte Pfade ignorieren für bessere Übersicht
+    if not name:
+        continue
+        
+    # Riesige Wegenetz-Relationen herausfiltern, falls gewünscht
+    if netze_ausblenden and ("lokale" in name.lower() or "wegenetz" in name.lower() or "wanderwege" in name.lower()):
+        if auswahl == "Alle benannten Routen anzeigen":
+            continue
+
+    # Nach gewählter Route filtern
+    if auswahl == "Alle benannten Routen anzeigen" or name == auswahl:
+        gefilterte_routen.append(f)
+
+st.sidebar.info(f"Angezeigte Routen: {len(gefilterte_routen)}")
+
+# --- KARTE ZEICHNEN ---
+karte = folium.Map(
+    location=[47.55, 10.45], # Zentriert auf den Ausschnitt im Bild (Wertach / Jungholz / Tannheimer Tal)
+    zoom_start=12,
+    tiles="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+    attr="Kartendaten: © OpenStreetMap-Mitwirkende, SRTM | Kartendarstellung: © OpenTopoMap (CC-BY-SA)"
+)
+
+for feature in gefilterte_routen:
+    eigenschaften = feature.get("properties", {})
+    routen_name = eigenschaften.get("name", "Route")
+    schwierigkeit = eigenschaften.get("sac_scale", "Keine Angabe")
+
+    folium.GeoJson(
+        feature,
+        style_function=lambda x: {
+            "color": "#d95f02",
+            "weight": 3, # Etwas dünnere Linien für bessere Übersicht
+            "opacity": 0.9
+        },
+        highlight_function=lambda x: {
+            "color": "#1b9e77",
+            "weight": 6,
+            "opacity": 1.0
+        },
+        tooltip=f"<b>{routen_name}</b>",
+        popup=folium.Popup(f"<b>Route:</b> {routen_name}<br><b>Schwierigkeit:</b> {schwierigkeit}", max_width=250)
+    ).add_to(karte)
+
+st_folium(karte, width=1100, height=650, returned_objects=[])
