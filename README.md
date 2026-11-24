@@ -21,6 +21,17 @@ Sprint 2:
       -Ich habe 3 Backlogs erstellt die den Aufgaben dieses Sprints entsprechen
         -> Bitte jeder eins von den Backlogs auswählen welches ihm gefällt und darunter kommentieren "Ich mach das"
 
+Sprint 3:
+  To-Do(bis 26.11.26):
+    ->Simon:
+      -Erstellen einer Suchfunktion die im Radius um eine einstellbare Koordinate sucht
+    ->Tobi
+      -Umstrukturieren des Codes mit Objektorientierter Programierung
+    ->Luis:
+      -Allgemeine Code Verbesserung durch Kommentare und Überschriften
+      -Schwierigkeitsfilter
+    ->Bene:
+      -Webdesign-Vorlage via Paint
 
 Definition of Done:
 
