@@ -1,4 +1,3 @@
-
 # --------------------------------------------------
 # Importieren der benötigten Bibliotheken
 # --------------------------------------------------
@@ -58,6 +57,24 @@ def ermittle_koordinaten(ort):
         return None
 
 
+def _ist_gueltiger_wert(wert):
+    """Prüft, ob ein numerischer Wert (z. B. Länge oder Dauer) nutzbar ist."""
+    if wert is None:
+        return False
+    if isinstance(wert, float) and math.isnan(wert):
+        return False
+    return wert >= 0
+
+
+def _schwierigkeit_als_zahl(route):
+    """Wandelt SAC-Schwierigkeitsgrade wie 'T2' oder 'T2+' in eine Zahl um."""
+    try:
+        text = (route.schwierigkeit or "").upper().split("+")[0].split("-")[0]
+        return int(text.replace("T", "").strip())
+    except (ValueError, AttributeError):
+        return float("inf")
+
+
 # --------------------------------------------------
 # Sortierfunktionen
 # --------------------------------------------------
@@ -69,7 +86,7 @@ def sortiere_nach_name(routen, absteigend=False):
 
     return sorted(
         routen,
-        key=lambda route: route.name.lower(),
+        key=lambda route: (route.name or "").lower(),
         reverse=absteigend
     )
 
@@ -82,17 +99,9 @@ def sortiere_nach_schwierigkeit(routen, absteigend=False):
     damit beispielsweise T2 vor T10 einsortiert wird.
     """
 
-    def schwierigkeit_als_zahl(route):
-        try:
-            return int(
-                route.schwierigkeit.upper().replace("T", "")
-            )
-        except (ValueError, AttributeError):
-            return float("inf")
-
     return sorted(
         routen,
-        key=schwierigkeit_als_zahl,
+        key=_schwierigkeit_als_zahl,
         reverse=absteigend
     )
 
@@ -105,12 +114,12 @@ def sortiere_nach_laenge(routen, absteigend=False):
 
     bekannte = [
         route for route in routen
-        if route.laenge is not None
+        if _ist_gueltiger_wert(route.laenge) and route.laenge > 0
     ]
 
     unbekannte = [
         route for route in routen
-        if route.laenge is None
+        if not (_ist_gueltiger_wert(route.laenge) and route.laenge > 0)
     ]
 
     bekannte.sort(
@@ -129,12 +138,12 @@ def sortiere_nach_dauer(routen, absteigend=False):
 
     bekannte = [
         route for route in routen
-        if route.dauer is not None
+        if _ist_gueltiger_wert(route.dauer) and route.dauer > 0
     ]
 
     unbekannte = [
         route for route in routen
-        if route.dauer is None
+        if not (_ist_gueltiger_wert(route.dauer) and route.dauer > 0)
     ]
 
     bekannte.sort(
@@ -167,7 +176,7 @@ def filter_nach_max_laenge(routen, max_laenge):
 
     return [
         route for route in routen
-        if route.laenge is not None
+        if _ist_gueltiger_wert(route.laenge)
         and route.laenge <= max_laenge
     ]
 
@@ -179,7 +188,7 @@ def filter_nach_max_dauer(routen, max_dauer):
 
     return [
         route for route in routen
-        if route.dauer is not None
+        if _ist_gueltiger_wert(route.dauer)
         and route.dauer <= max_dauer
     ]
 
@@ -200,31 +209,25 @@ def filter_nach_bereich(
     """
     Filtert Wanderrouten anhand von Länge, Dauer
     und SAC-Schwierigkeitsgrad.
-
-    Routen ohne gültige Angaben werden übersprungen.
     """
 
     gefilterte_routen = []
 
     for route in routen:
 
-        # Länge und Dauer müssen bekannt sein.
-        if route.laenge is None or route.dauer is None:
+        if not _ist_gueltiger_wert(route.laenge) or not _ist_gueltiger_wert(route.dauer):
             continue
 
-        # SAC-Schwierigkeit in eine Zahl umwandeln.
-        try:
-            schwierigkeit = int(
-                route.schwierigkeit.upper().replace("T", "")
-            )
-        except (ValueError, AttributeError):
-            continue
+        schwierigkeit = _schwierigkeit_als_zahl(route)
 
         # Prüfen, ob alle Filterbereiche erfüllt sind.
         if (
             min_laenge <= route.laenge <= max_laenge
             and min_dauer <= route.dauer <= max_dauer
-            and min_schwierigkeit <= schwierigkeit <= max_schwierigkeit
+            and (
+                math.isinf(schwierigkeit)
+                or min_schwierigkeit <= schwierigkeit <= max_schwierigkeit
+            )
         ):
             gefilterte_routen.append(route)
 
@@ -249,8 +252,8 @@ def berechne_entfernung(koordinate1, koordinate2):
 
     erdradius = 6371.0
 
-    lat1, lon1 = map(math.radians, koordinate1)
-    lat2, lon2 = map(math.radians, koordinate2)
+    lat1, lon1 = map(math.radians, koordinate1[:2])
+    lat2, lon2 = map(math.radians, koordinate2[:2])
 
     delta_lat = lat2 - lat1
     delta_lon = lon2 - lon1
@@ -300,17 +303,20 @@ def filter_nach_start_und_ende(
 
     for route in routen:
 
-        # Routen ohne Koordinaten überspringen.
-        if not route.koordinaten:
+        koordinaten = route.koordinaten
+        if not koordinaten and route.start_koordinaten:
+            koordinaten = [route.start_koordinaten]
+
+        if not koordinaten:
             continue
 
         # ------------------------------------------
         # Startpunkt prüfen
         # ------------------------------------------
 
-        if start_koordinaten is not None:
+        if start_koordinaten is not None and start_radius is not None:
 
-            routen_start = route.koordinaten[0]
+            routen_start = route.start_koordinaten if route.start_koordinaten else koordinaten[0]
 
             entfernung_start = berechne_entfernung(
                 start_koordinaten,
@@ -324,9 +330,9 @@ def filter_nach_start_und_ende(
         # Endpunkt prüfen
         # ------------------------------------------
 
-        if end_koordinaten is not None:
+        if end_koordinaten is not None and end_radius is not None:
 
-            routen_ende = route.koordinaten[-1]
+            routen_ende = koordinaten[-1]
 
             entfernung_ende = berechne_entfernung(
                 end_koordinaten,
