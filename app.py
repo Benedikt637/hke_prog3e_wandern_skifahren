@@ -1,3 +1,4 @@
+
 # --------------------------------------------------
 # Importieren der benötigten Bibliotheken
 # --------------------------------------------------
@@ -11,7 +12,7 @@ from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 from streamlit_folium import st_folium
 from pathlib import Path
 
-# Eigene Module aus dem Paket "main" importieren
+# Eigene Module importieren
 import main.data as data
 import main.functions as functions
 
@@ -23,6 +24,7 @@ import main.functions as functions
 JSON_DATEI = (
     Path(__file__).resolve().parent
     / "main"
+    / "datasources"
     / "Wanderwege.json"
 )
 
@@ -53,19 +55,21 @@ class WanderApp:
 
         laengen = [
             route.laenge for route in routen
-            if route.laenge is not None and route.laenge > 0
+            if route.laenge is not None
         ]
 
         dauern = [
             route.dauer for route in routen
-            if route.dauer is not None and route.dauer > 0
+            if route.dauer is not None
         ]
 
         if not laengen or not dauern:
-            st.info("Keine positiven Längen- oder Zeitangaben gefunden – Standardbereiche werden verwendet.")
+            st.warning("Es fehlen Längen- oder Zeitangaben.")
+            return None
 
-        max_laenge = math.ceil(max(laengen) * 2) / 2 if laengen else 20.0
-        max_dauer = math.ceil(max(dauern) * 2) / 2 if dauern else 8.0
+        # Maximale Werte auf halbe Schritte aufrunden.
+        max_laenge = math.ceil(max(laengen) * 2) / 2
+        max_dauer = math.ceil(max(dauern) * 2) / 2
 
         # Länge auswählen.
         st.markdown("**Weglänge (km)**")
@@ -73,8 +77,8 @@ class WanderApp:
         laengen_bereich = st.slider(
             "Gewünschte Länge",
             min_value=0.0,
-            max_value=float(max(0.5, max_laenge)),
-            value=(0.0, float(max(0.5, max_laenge))),
+            max_value=float(max_laenge),
+            value=(0.0, float(max_laenge)),
             step=0.5,
             label_visibility="collapsed",
             key="laengen_bereich"
@@ -86,8 +90,8 @@ class WanderApp:
         dauer_bereich = st.slider(
             "Gewünschte Dauer",
             min_value=0.0,
-            max_value=float(max(0.5, max_dauer)),
-            value=(0.0, float(max(0.5, max_dauer))),
+            max_value=float(max_dauer),
+            value=(0.0, float(max_dauer)),
             step=0.5,
             label_visibility="collapsed",
             key="dauer_bereich"
@@ -158,20 +162,22 @@ class WanderApp:
 
         st.subheader("Gefundene Wanderrouten")
 
+        # Routendaten für die Tabelle vorbereiten.
         routen_tabelle = []
 
-        for index, route in enumerate(routen):
+        for route in routen:
             routen_tabelle.append({
-                "Nr.": index + 1,
+                "ID": route.id,
                 "Name": route.name,
+                "Region": route.region,
                 "Schwierigkeit": route.schwierigkeit,
                 "Länge (km)": route.laenge,
-                "Dauer (Stunden)": route.dauer,
-                "Punkte": route.n_samples()
+                "Dauer (Stunden)": route.dauer
             })
 
         df = pd.DataFrame(routen_tabelle)
 
+        # Einstellungen der interaktiven Tabelle.
         grid_builder = GridOptionsBuilder.from_dataframe(df)
 
         grid_builder.configure_selection(
@@ -179,6 +185,7 @@ class WanderApp:
             use_checkbox=False
         )
 
+        # Doppelklick wählt eine Tabellenzeile aus.
         doppelklick_handler = JsCode("""
             function(params) {
                 params.node.setSelected(true, false);
@@ -191,6 +198,7 @@ class WanderApp:
 
         grid_options = grid_builder.build()
 
+        # Tabelle anzeigen.
         tabellen_ergebnis = AgGrid(
             df,
             gridOptions=grid_options,
@@ -201,6 +209,7 @@ class WanderApp:
             key="wanderrouten_tabelle"
         )
 
+        # Ausgewählte Zeilen auslesen.
         ausgewaehlte_zeilen = tabellen_ergebnis.get(
             "selected_rows"
         )
@@ -208,6 +217,7 @@ class WanderApp:
         if ausgewaehlte_zeilen is None:
             return []
 
+        # DataFrame in Dictionaries umwandeln.
         if isinstance(ausgewaehlte_zeilen, pd.DataFrame):
             ausgewaehlte_zeilen = ausgewaehlte_zeilen.to_dict(
                 "records"
@@ -216,15 +226,17 @@ class WanderApp:
         if len(ausgewaehlte_zeilen) == 0:
             return []
 
-        ausgewaehlte_nummern = []
+        # IDs der ausgewählten Routen ermitteln.
+        ausgewaehlte_ids = []
 
         for zeile in ausgewaehlte_zeilen:
-            if isinstance(zeile, dict) and "Nr." in zeile:
-                ausgewaehlte_nummern.append(int(zeile["Nr."]))
+            if isinstance(zeile, dict) and "ID" in zeile:
+                ausgewaehlte_ids.append(int(zeile["ID"]))
 
+        # Originale Wanderrouten zurückgeben.
         return [
-            route for index, route in enumerate(routen)
-            if (index + 1) in ausgewaehlte_nummern
+            route for route in routen
+            if route.id in ausgewaehlte_ids
         ]
 
     def zeige_routen_auf_karte(self, routen):
@@ -327,6 +339,7 @@ class WanderApp:
 
         st.title("Wander Routen Finder")
 
+        # Daten laden.
         try:
             self.lade_daten()
 
@@ -334,6 +347,7 @@ class WanderApp:
             st.error(f"Fehler beim Laden der Daten: {error}")
             return
 
+        # Filterbereich anzeigen.
         filterwerte = self.zeige_filter()
 
         if filterwerte is None:
@@ -345,6 +359,7 @@ class WanderApp:
             schwierigkeit_bereich
         ) = filterwerte
 
+        # Start- und Endpunktfilter anzeigen.
         (
             startort,
             start_radius,
@@ -352,12 +367,14 @@ class WanderApp:
             end_radius
         ) = self.zeige_ortsfilter()
 
+        # Suche wird nur einmal ausgeführt.
         if st.button(
             "Wanderrouten suchen",
             type="primary",
             key="wanderrouten_suchen"
         ):
 
+            # Zuerst die bisherigen Filter anwenden.
             gefilterte_routen = functions.filter_nach_bereich(
                 self.auswertung.data,
                 laengen_bereich[0],
@@ -368,6 +385,7 @@ class WanderApp:
                 schwierigkeit_bereich[1]
             )
 
+            # Startort in Koordinaten umwandeln.
             start_koordinaten = None
 
             if startort.strip():
@@ -381,6 +399,7 @@ class WanderApp:
                     )
                     return
 
+            # Endort in Koordinaten umwandeln.
             end_koordinaten = None
 
             if endort.strip():
@@ -394,6 +413,7 @@ class WanderApp:
                     )
                     return
 
+            # Routen anhand der Start- und Endpunkte filtern.
             gefilterte_routen = functions.filter_nach_start_und_ende(
                 gefilterte_routen,
                 start_koordinaten=start_koordinaten,
@@ -402,8 +422,10 @@ class WanderApp:
                 end_radius=end_radius
             )
 
+            # Ergebnisse in der Sitzung speichern.
             st.session_state["gefilterte_routen"] = gefilterte_routen
 
+        # Ergebnisse erst nach einer Suche anzeigen.
         if "gefilterte_routen" not in st.session_state:
             st.info(
                 "Stelle deine Filter ein und starte die Suche."
@@ -422,14 +444,17 @@ class WanderApp:
             f"{len(gefilterte_routen)} passende Wanderrouten gefunden."
         )
 
+        # Tabelle anzeigen und ausgewählte Routen zurückgeben.
         ausgewaehlte_routen = self.zeige_routentabelle(
             gefilterte_routen
         )
 
         st.divider()
 
+        # Anzeige der Routeninformationen und der Karte.
         column1, column2 = st.columns([1, 3])
 
+        # Linke Spalte: Informationen zu ausgewählten Routen.
         with column1:
 
             st.subheader("Ausgewählte Routen")
@@ -440,18 +465,19 @@ class WanderApp:
 
                     with st.expander(route.name):
 
+                        st.write(f"**Region:** {route.region}")
                         st.write(
                             f"**Schwierigkeit:** {route.schwierigkeit}"
                         )
                         st.write(f"**Länge:** {route.laenge} km")
                         st.write(f"**Dauer:** {route.dauer} Stunden")
-                        st.write(f"**Koordinatenpunkte:** {route.n_samples()}")
 
             else:
                 st.info(
                     "Wähle Routen aus, um sie auf der Karte anzuzeigen."
                 )
 
+        # Rechte Spalte: Karte.
         with column2:
 
             self.zeige_routen_auf_karte(
