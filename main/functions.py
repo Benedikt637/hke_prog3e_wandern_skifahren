@@ -1,20 +1,342 @@
-import folium
-from streamlit_geolocation import streamlit_geolocation
+
+# --------------------------------------------------
+# Importieren der benötigten Bibliotheken
+# --------------------------------------------------
+
+import math
+from functools import lru_cache
+
+from geopy.geocoders import Nominatim
+from geopy.extra.rate_limiter import RateLimiter
+from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 
 
-#-----Add Current Location as Marker-----#
-def get_detected_location():
-    return streamlit_geolocation()
+# --------------------------------------------------
+# Geocoding für Start- und Endpunkte
+# --------------------------------------------------
+
+# Geocoder für OpenStreetMap einmalig erstellen.
+geocoder = Nominatim(user_agent="wander_routen_finder")
+
+# Zwischen zwei Anfragen mindestens eine Sekunde warten.
+geocode_mit_pause = RateLimiter(
+    geocoder.geocode,
+    min_delay_seconds=1
+)
 
 
-def add_detected_location_marker(map_object, detected_location):
+@lru_cache(maxsize=128)
+def ermittle_koordinaten(ort):
+    """
+    Wandelt einen Ortsnamen in geografische Koordinaten um.
 
-    if not detected_location or "latitude" not in detected_location or "longitude" not in detected_location:
-        return map_object  # Return the original map if no location is detected
+    Args:
+        ort (str): Name des gesuchten Ortes.
 
-    detected_latitude = detected_location["latitude"]
-    detected_longitude = detected_location["longitude"]
-    print(f"Location found: {detected_location['latitude']}, {detected_location['longitude']}")
-    map_object.location = [detected_latitude, detected_longitude]
-    folium.Marker([detected_latitude, detected_longitude], tooltip="Your Location").add_to(map_object)
-    return map_object
+    Returns:
+        tuple | None: Breitengrad und Längengrad oder None.
+    """
+
+    if not ort or not ort.strip():
+        return None
+
+    try:
+        ergebnis = geocode_mit_pause(
+            ort.strip(),
+            timeout=10
+        )
+
+        if ergebnis is None:
+            return None
+
+        return (
+            ergebnis.latitude,
+            ergebnis.longitude
+        )
+
+    except (GeocoderTimedOut, GeocoderServiceError):
+        return None
+
+
+# --------------------------------------------------
+# Sortierfunktionen
+# --------------------------------------------------
+
+def sortiere_nach_name(routen, absteigend=False):
+    """
+    Sortiert Wanderrouten alphabetisch nach ihrem Namen.
+    """
+
+    return sorted(
+        routen,
+        key=lambda route: route.name.lower(),
+        reverse=absteigend
+    )
+
+
+def sortiere_nach_schwierigkeit(routen, absteigend=False):
+    """
+    Sortiert nach dem SAC-Schwierigkeitsgrad.
+
+    Die Zahl hinter dem T wird numerisch ausgewertet,
+    damit beispielsweise T2 vor T10 einsortiert wird.
+    """
+
+    def schwierigkeit_als_zahl(route):
+        try:
+            return int(
+                route.schwierigkeit.upper().replace("T", "")
+            )
+        except (ValueError, AttributeError):
+            return float("inf")
+
+    return sorted(
+        routen,
+        key=schwierigkeit_als_zahl,
+        reverse=absteigend
+    )
+
+
+def sortiere_nach_laenge(routen, absteigend=False):
+    """
+    Sortiert nach Streckenlänge.
+    Routen ohne Längenangabe stehen immer am Ende.
+    """
+
+    bekannte = [
+        route for route in routen
+        if route.laenge is not None
+    ]
+
+    unbekannte = [
+        route for route in routen
+        if route.laenge is None
+    ]
+
+    bekannte.sort(
+        key=lambda route: route.laenge,
+        reverse=absteigend
+    )
+
+    return bekannte + unbekannte
+
+
+def sortiere_nach_dauer(routen, absteigend=False):
+    """
+    Sortiert nach Dauer.
+    Routen ohne Dauerangabe stehen immer am Ende.
+    """
+
+    bekannte = [
+        route for route in routen
+        if route.dauer is not None
+    ]
+
+    unbekannte = [
+        route for route in routen
+        if route.dauer is None
+    ]
+
+    bekannte.sort(
+        key=lambda route: route.dauer,
+        reverse=absteigend
+    )
+
+    return bekannte + unbekannte
+
+
+# --------------------------------------------------
+# Einfache Filterfunktionen
+# --------------------------------------------------
+
+def filter_nach_schwierigkeit(routen, schwierigkeit):
+    """
+    Filtert Routen nach einem bestimmten SAC-Schwierigkeitsgrad.
+    """
+
+    return [
+        route for route in routen
+        if route.schwierigkeit == schwierigkeit
+    ]
+
+
+def filter_nach_max_laenge(routen, max_laenge):
+    """
+    Filtert Routen nach einer maximalen Streckenlänge.
+    """
+
+    return [
+        route for route in routen
+        if route.laenge is not None
+        and route.laenge <= max_laenge
+    ]
+
+
+def filter_nach_max_dauer(routen, max_dauer):
+    """
+    Filtert Routen nach einer maximalen Dauer.
+    """
+
+    return [
+        route for route in routen
+        if route.dauer is not None
+        and route.dauer <= max_dauer
+    ]
+
+
+# --------------------------------------------------
+# Kombinierter Filter für Länge, Dauer und Schwierigkeit
+# --------------------------------------------------
+
+def filter_nach_bereich(
+    routen,
+    min_laenge,
+    max_laenge,
+    min_dauer,
+    max_dauer,
+    min_schwierigkeit,
+    max_schwierigkeit
+):
+    """
+    Filtert Wanderrouten anhand von Länge, Dauer
+    und SAC-Schwierigkeitsgrad.
+
+    Routen ohne gültige Angaben werden übersprungen.
+    """
+
+    gefilterte_routen = []
+
+    for route in routen:
+
+        # Länge und Dauer müssen bekannt sein.
+        if route.laenge is None or route.dauer is None:
+            continue
+
+        # SAC-Schwierigkeit in eine Zahl umwandeln.
+        try:
+            schwierigkeit = int(
+                route.schwierigkeit.upper().replace("T", "")
+            )
+        except (ValueError, AttributeError):
+            continue
+
+        # Prüfen, ob alle Filterbereiche erfüllt sind.
+        if (
+            min_laenge <= route.laenge <= max_laenge
+            and min_dauer <= route.dauer <= max_dauer
+            and min_schwierigkeit <= schwierigkeit <= max_schwierigkeit
+        ):
+            gefilterte_routen.append(route)
+
+    return gefilterte_routen
+
+
+# --------------------------------------------------
+# Berechnung geografischer Entfernungen
+# --------------------------------------------------
+
+def berechne_entfernung(koordinate1, koordinate2):
+    """
+    Berechnet die Entfernung zwischen zwei geografischen
+    Koordinaten mithilfe der Haversine-Formel.
+
+    Beide Koordinaten müssen im Format
+    [Breitengrad, Längengrad] angegeben werden.
+
+    Returns:
+        float: Entfernung in Kilometern.
+    """
+
+    erdradius = 6371.0
+
+    lat1, lon1 = map(math.radians, koordinate1)
+    lat2, lon2 = map(math.radians, koordinate2)
+
+    delta_lat = lat2 - lat1
+    delta_lon = lon2 - lon1
+
+    a = (
+        math.sin(delta_lat / 2) ** 2
+        + math.cos(lat1)
+        * math.cos(lat2)
+        * math.sin(delta_lon / 2) ** 2
+    )
+
+    c = 2 * math.atan2(
+        math.sqrt(a),
+        math.sqrt(1 - a)
+    )
+
+    return erdradius * c
+
+
+# --------------------------------------------------
+# Filterung nach Start- und Endpunkt
+# --------------------------------------------------
+
+def filter_nach_start_und_ende(
+    routen,
+    start_koordinaten=None,
+    end_koordinaten=None,
+    start_radius=None,
+    end_radius=None
+):
+    """
+    Filtert Wanderrouten anhand ihrer geografischen
+    Start- und Endpunkte.
+
+    Eine Route bleibt erhalten, wenn:
+
+    - ihr Startpunkt innerhalb des Startradius liegt,
+    - ihr Endpunkt innerhalb des Endradius liegt.
+
+    Nicht angegebene Orte werden ignoriert.
+
+    Die Koordinaten müssen im Format
+    [Breitengrad, Längengrad] vorliegen.
+    """
+
+    gefilterte_routen = []
+
+    for route in routen:
+
+        # Routen ohne Koordinaten überspringen.
+        if not route.koordinaten:
+            continue
+
+        # ------------------------------------------
+        # Startpunkt prüfen
+        # ------------------------------------------
+
+        if start_koordinaten is not None:
+
+            routen_start = route.koordinaten[0]
+
+            entfernung_start = berechne_entfernung(
+                start_koordinaten,
+                routen_start
+            )
+
+            if entfernung_start > start_radius:
+                continue
+
+        # ------------------------------------------
+        # Endpunkt prüfen
+        # ------------------------------------------
+
+        if end_koordinaten is not None:
+
+            routen_ende = route.koordinaten[-1]
+
+            entfernung_ende = berechne_entfernung(
+                end_koordinaten,
+                routen_ende
+            )
+
+            if entfernung_ende > end_radius:
+                continue
+
+        # Route erfüllt alle angegebenen Bedingungen.
+        gefilterte_routen.append(route)
+
+    return gefilterte_routen

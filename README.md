@@ -72,3 +72,9 @@ Epics:
 -Integration von Funktionen 
 -Einbinden von verschiedenen Daten(z.B.: Schwierigkeit, Strecke, mögliche Rastgelegenheiten, Dauer, etc.
 -Saubere Protokollierung von Änderungen 
+
+
+Anleitung:
+Notwendige libraries mit "py -m pip install -r requirements.txt" installieren (im Projekt Ordner)
+App starten mit "py -m streamlit run app.py" (im Projekt Ordner)
+Hinweise zum Projekt erhalten mit "py application.py" (im Main Ordner)
