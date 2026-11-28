@@ -2,6 +2,11 @@
 
 Sprintziele:
 
+Bedeutung der Prioritäten:
+  P0: muss diesen Sprint erledigt werden
+  P1: kann auch noch in nächsten Sprint erledigt werden aber im Optimalfall in diesem Sprint
+  P2: wiederkehrender Auftrag(z.B.: Codequalität verbessern
+
 Sprint 1:Jede Person arbeitet sicher im Repository, Datenquellen sind identifiziert und erste Daten lassen sich anzeigen.
   To-Do(bis 22.10.26):
     ->Simon/Tobi: Grund-Benutzeroberfläche mithilfe von Streamlit und Folio erstellen und sich mit diesen bekanntmachen.
@@ -32,6 +37,20 @@ Sprint 3:
       -Schwierigkeitsfilter
     ->Bene:
       -Webdesign-Vorlage via Paint
+
+Sprint 4:
+  To-Do(bis 11.12.26):
+    ->Tobi:
+      -Ducktyping in Code einbauen
+    ->Bene:
+      -Startanleitung in Readme
+      -Designziele in Definition of Done
+      -Architektur in Klassendiagramm
+    ->Alle:
+      -Sprache vereinheitlichen
+      -Codequalität verbessern
+      -Debugging und Fehlersuche
+      -Frontend nach Designziele anpassen
 
 Definition of Done:
 
